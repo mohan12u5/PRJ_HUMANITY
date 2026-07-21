@@ -1,0 +1,43 @@
+export type Product = {
+  slug: string;
+  name: string;
+  category: string;
+  price: number;
+  description: string;
+  badge: string;
+  colors: string[];
+  images: string[];
+  detailImages: string[];
+  details: string[];
+};
+
+export const products: Product[] = [
+  {
+    slug: 'unisex-black-hoodie',
+    name: 'Unisex Black Hoodie',
+    category: 'Hoodies',
+    price: 49,
+    description: 'Heavyweight comfort with a soft fleece interior and your logo centered proudly.',
+    badge: 'Best Seller',
+    colors: ['Black', 'Charcoal'],
+    images: ['/model-hoodie-1.jpg', '/model-hoodie-2.png'],
+    detailImages: ['/model-hoodie-1.jpg', '/model-hoodie-2.png', '/model-hoodie-3.png', '/model-hoodie-4.png'],
+    details: ['Relaxed unisex fit', 'Soft brushed interior', 'Centered logo print']
+  },
+  {
+    slug: 'black-cotton-tshirt',
+    name: 'Black Cotton Tee',
+    category: 'T-Shirts',
+    price: 29,
+    description: 'A clean everyday tee made for layering, travel, and daily wear.',
+    badge: 'New Drop',
+    colors: ['Black', 'White'],
+    images: ['/model-tee-1.png', '/model-tee-2.png'],
+    detailImages: ['/model-tee-1.png', '/model-tee-2.png', '/model-tee-3.png', '/model-tee-4.png'],
+    details: ['Premium cotton blend', 'Classic crew neck', 'Logo print at the center']
+  }
+];
+
+export function getProduct(slug: string) {
+  return products.find((product) => product.slug === slug);
+}

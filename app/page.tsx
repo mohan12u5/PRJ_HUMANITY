@@ -7,9 +7,37 @@ import { AddToCartButton } from '@/app/components/add-to-cart-button';
 import { SiteHeader } from '@/app/components/site-header';
 import { useCart } from '@/app/components/cart-context';
 
+const heroSlides = [
+  {
+    src: '/1000170135.png',
+    title: 'Introducing Humanity',
+    description: 'Minimal outerwear  for a premium look,worn by Human.'
+  },
+  {
+    src: '/Humanity_Slide_1.png',
+    title: 'Street Essentials',
+    description: 'Sharp everyday pieces with a modern fashion-editorial mood.'
+  },
+  {
+    src: '/Humanity_Slide_2.png',
+    title: 'Signature Layers',
+    description: 'Soft depth, bold contrast, and a strong '+
+  'future Human is here.'
+  },
+  {
+    src: '/Humanity_Slide_3.png',
+    title: 'Monochrome Minimal',
+    description: 'A high-impact fashion structured look ready to showcase your Human Nature.'
+  }
+] as const;
+
 export default function HomePage() {
   const { itemCount } = useCart();
   const [activeIndexes, setActiveIndexes] = useState<number[]>(() => products.map(() => 0));
+  const [activeHeroSlide, setActiveHeroSlide] = useState(0);
+  const [isHeroPaused, setIsHeroPaused] = useState(false);
+
+  const totalHeroSlides = heroSlides.length;
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -22,27 +50,101 @@ export default function HomePage() {
     return () => window.clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (isHeroPaused) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setActiveHeroSlide((prev) => (prev + 1) % totalHeroSlides);
+    }, 3000);
+
+    return () => window.clearInterval(interval);
+  }, [isHeroPaused, totalHeroSlides]);
+
+  const showPreviousHeroSlide = () => {
+    setActiveHeroSlide((prev) => (prev - 1 + totalHeroSlides) % totalHeroSlides);
+  };
+
+  const showNextHeroSlide = () => {
+    setActiveHeroSlide((prev) => (prev + 1) % totalHeroSlides);
+  };
+
   return (
     <main className="page-shell">
       <SiteHeader itemCount={itemCount} />
 
       <section className="hero-card">
         <div className="hero-copy">
-          <p className="eyebrow">Humanity Clothing</p>
-          <h1>Wear your story with confidence.</h1>
-          <p>
-            A premium fashion experience shaped for bold individuals who want timeless style with a modern edge.
-          </p>
-          <div className="hero-actions">
-            <a href="#collection" className="btn btn-primary">Explore Collection</a>
-            <a href="#contact" className="btn btn-secondary">Join the List</a>
+          <div className="hero-brand-banner">
+            <div
+              className="hero-logo-stage"
+              onMouseEnter={() => setIsHeroPaused(true)}
+              onMouseLeave={() => setIsHeroPaused(false)}
+              onFocus={() => setIsHeroPaused(true)}
+              onBlur={() => setIsHeroPaused(false)}
+            >
+              {heroSlides.map((slide, index) => (
+                <div
+                  key={slide.src}
+                  className={`hero-slide ${index === activeHeroSlide ? 'is-active' : ''}`}
+                  aria-hidden={index !== activeHeroSlide}
+                >
+                  <img
+                    src={slide.src}
+                    alt={slide.title}
+                    className={`hero-slide-image ${index === 0 ? 'hero-slide-image-first' : ''}`}
+                  />
+                  <div className="hero-slide-overlay" />
+                  <div className={`hero-slide-copy ${index === 0 ? 'hero-slide-copy-first' : ''} ${index === 2 ? 'hero-slide-copy-compact' : ''}`}>
+                    <span className="hero-slide-kicker">Humanity</span>
+                    <h2>{slide.title}</h2>
+                    <p>{slide.description}</p>
+                  </div>
+                </div>
+              ))}
+
+              <div className="hero-slide-controls">
+                <button
+                  type="button"
+                  className="hero-slide-control"
+                  aria-label="Previous slide"
+                  onClick={showPreviousHeroSlide}
+                >
+                  {'<'}
+                </button>
+                <button
+                  type="button"
+                  className="hero-slide-control"
+                  aria-label="Next slide"
+                  onClick={showNextHeroSlide}
+                >
+                  {'>'}
+                </button>
+              </div>
+            </div>
+            <div className={`hero-slide-dots ${isHeroPaused ? 'is-paused' : ''}`} aria-label="Hero slides">
+              {heroSlides.map((slide, index) => (
+                <button
+                  key={slide.src}
+                  type="button"
+                  className={`hero-slide-dot ${index === activeHeroSlide ? 'is-active' : ''}`}
+                  aria-label={`Show slide ${index + 1}`}
+                  onClick={() => setActiveHeroSlide(index)}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-        <div className="hero-panel">
-          <div className="glass-card">
-            <p className="mini-label">Featured Drop</p>
-            <h3>Monochrome Luxe</h3>
-            <p>Elevated essentials designed to move with you.</p>
+          <div className="hero-text-block">
+            <p className="eyebrow">Humanity Clothing</p>
+            <h1>Wear your story with confidence.</h1>
+            <p>
+              A premium fashion experience shaped for bold individuals who want timeless style with a modern edge.
+            </p>
+            <div className="hero-actions">
+              <a href="#collection" className="btn btn-primary">Explore Collection</a>
+              <a href="#contact" className="btn btn-secondary">Join the List</a>
+            </div>
           </div>
         </div>
       </section>

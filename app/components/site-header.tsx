@@ -18,6 +18,8 @@ export function SiteHeader({ itemCount }: SiteHeaderProps) {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
+    let active = true;
+
     const stored = window.localStorage.getItem('humanity-user');
     if (stored) {
       try {
@@ -26,19 +28,51 @@ export function SiteHeader({ itemCount }: SiteHeaderProps) {
         setUser(null);
       }
     }
+
+    const validateSession = async () => {
+      try {
+        const response = await fetch('/api/session', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok && active) {
+          window.localStorage.removeItem('humanity-user');
+          window.localStorage.removeItem('humanity-session');
+          setUser(null);
+        }
+      } catch {
+        // Keep current UI state on transient network issues.
+      }
+    };
+
+    validateSession();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const handleLogout = () => {
-    window.localStorage.removeItem('humanity-user');
-    setUser(null);
-    router.push('/');
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/session', { method: 'DELETE' });
+    } finally {
+      window.localStorage.removeItem('humanity-user');
+      window.localStorage.removeItem('humanity-session');
+      setUser(null);
+      router.push('/');
+    }
   };
 
   return (
     <header className="topbar">
       <Link href="/" className="brand-mark">
-        <img src="/1000170135.png" alt="Brand logo" className="brand-logo" />
-        <span>Humanity</span>
+        <span className="brand-wordmark">
+          <strong>Humanity</strong>
+          <small>Premium Human wear</small>
+        </span>
       </Link>
 
       <nav className="topnav">

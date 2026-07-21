@@ -16,4 +16,4 @@ A polished clothing brand website built with Next.js and designed for Vercel dep
 ## Deploy to Vercel
 1. Push this folder to GitHub
 2. Import the repository in Vercel
-3. Deploy
+3. Deploy.

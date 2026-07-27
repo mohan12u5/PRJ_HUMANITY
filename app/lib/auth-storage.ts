@@ -1,10 +1,10 @@
 import 'server-only';
 
 import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
-import { mkdir, readFile, writeFile } from 'fs/promises';
-import path from 'path';
+import { prisma } from '@/app/lib/db';
 
 export type StoredUser = {
+  id: string;
   name: string;
   gender: string;
   dob: string;
@@ -12,65 +12,62 @@ export type StoredUser = {
   phone: string;
   userId: string;
   passwordHash: string;
+  role: 'CUSTOMER' | 'ADMIN';
   createdAt: string;
   failedLoginAttempts: number;
   lockUntil: string | null;
 };
 
-const usersFilePath = path.join(process.cwd(), 'data', 'users.json');
+function parseDobToDate(value: string) {
+  const [dayPart, monthPart, yearPart] = value.split('/');
+  const day = Number(dayPart);
+  const month = Number(monthPart);
+  const year = Number(yearPart);
+  return new Date(Date.UTC(year, month - 1, day));
+}
 
-async function ensureUsersFile() {
-  await mkdir(path.dirname(usersFilePath), { recursive: true });
+function formatDobFromDate(value: Date) {
+  const day = `${value.getUTCDate()}`.padStart(2, '0');
+  const month = `${value.getUTCMonth() + 1}`.padStart(2, '0');
+  const year = `${value.getUTCFullYear()}`;
+  return `${day}/${month}/${year}`;
+}
 
-  try {
-    await readFile(usersFilePath, 'utf8');
-  } catch {
-    await writeFile(usersFilePath, '[]', 'utf8');
-  }
+function mapToStoredUser(user: {
+  id: string;
+  name: string;
+  gender: string;
+  dob: Date;
+  email: string;
+  phone: string;
+  userId: string;
+  passwordHash: string;
+  role: 'CUSTOMER' | 'ADMIN';
+  createdAt: Date;
+  failedLoginAttempts: number;
+  lockUntil: Date | null;
+}): StoredUser {
+  return {
+    id: user.id,
+    name: user.name,
+    gender: user.gender,
+    dob: formatDobFromDate(user.dob),
+    email: user.email,
+    phone: user.phone,
+    userId: user.userId,
+    passwordHash: user.passwordHash,
+    role: user.role,
+    createdAt: user.createdAt.toISOString(),
+    failedLoginAttempts: user.failedLoginAttempts,
+    lockUntil: user.lockUntil ? user.lockUntil.toISOString() : null
+  };
 }
 
 export async function readUsers() {
-  await ensureUsersFile();
-
-  try {
-    const content = await readFile(usersFilePath, 'utf8');
-    const parsed = JSON.parse(content) as Partial<StoredUser>[];
-
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed
-      .filter((user) =>
-        typeof user?.name === 'string' &&
-        typeof user?.gender === 'string' &&
-        typeof user?.dob === 'string' &&
-        typeof user?.email === 'string' &&
-        typeof user?.phone === 'string' &&
-        typeof user?.userId === 'string' &&
-        typeof user?.passwordHash === 'string' &&
-        typeof user?.createdAt === 'string'
-      )
-      .map((user) => ({
-        name: user.name as string,
-        gender: user.gender as string,
-        dob: user.dob as string,
-        email: user.email as string,
-        phone: user.phone as string,
-        userId: user.userId as string,
-        passwordHash: user.passwordHash as string,
-        createdAt: user.createdAt as string,
-        failedLoginAttempts: typeof user.failedLoginAttempts === 'number' ? user.failedLoginAttempts : 0,
-        lockUntil: typeof user.lockUntil === 'string' || user.lockUntil === null ? user.lockUntil : null
-      }));
-  } catch {
-    return [];
-  }
-}
-
-async function writeUsers(users: StoredUser[]) {
-  await ensureUsersFile();
-  await writeFile(usersFilePath, JSON.stringify(users, null, 2), 'utf8');
+  const users = await prisma.user.findMany({
+    orderBy: { createdAt: 'asc' }
+  });
+  return users.map(mapToStoredUser);
 }
 
 function hashPassword(password: string) {
@@ -93,35 +90,66 @@ export function verifyPassword(password: string, storedHash: string) {
   return derivedKeyView.length === storedKeyView.length && timingSafeEqual(derivedKeyView, storedKeyView);
 }
 
-export async function createUser(user: Omit<StoredUser, 'passwordHash' | 'createdAt' | 'failedLoginAttempts' | 'lockUntil'> & { password: string }) {
-  const users = await readUsers();
-  const storedUser: StoredUser = {
-    name: user.name,
-    gender: user.gender,
-    dob: user.dob,
-    email: user.email,
-    phone: user.phone,
-    userId: user.userId,
-    passwordHash: hashPassword(user.password),
-    createdAt: new Date().toISOString(),
-    failedLoginAttempts: 0,
-    lockUntil: null
-  };
+export async function updateUserPassword(userId: string, newPassword: string) {
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      passwordHash: hashPassword(newPassword),
+      failedLoginAttempts: 0,
+      lockUntil: null
+    }
+  });
+}
 
-  users.push(storedUser);
-  await writeUsers(users);
-  return storedUser;
+export async function createUser(user: Omit<StoredUser, 'id' | 'passwordHash' | 'createdAt' | 'failedLoginAttempts' | 'lockUntil' | 'role'> & { password: string }) {
+  const created = await prisma.user.create({
+    data: {
+      name: user.name,
+      gender: user.gender,
+      dob: parseDobToDate(user.dob),
+      email: user.email,
+      phone: user.phone,
+      userId: user.userId,
+      passwordHash: hashPassword(user.password)
+    }
+  });
+
+  return mapToStoredUser(created);
 }
 
 export async function findUserByUserId(userId: string) {
-  const users = await readUsers();
-  return users.find((user) => user.userId.toLowerCase() === userId.toLowerCase()) ?? null;
+  const user = await prisma.user.findFirst({
+    where: {
+      userId: {
+        equals: userId,
+        mode: 'insensitive'
+      }
+    }
+  });
+  return user ? mapToStoredUser(user) : null;
 }
 
 export async function findUserByLoginIdentifier(identifier: string) {
-  const normalized = identifier.toLowerCase();
-  const users = await readUsers();
-  return users.find((user) => user.userId.toLowerCase() === normalized || user.email.toLowerCase() === normalized) ?? null;
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        {
+          userId: {
+            equals: identifier,
+            mode: 'insensitive'
+          }
+        },
+        {
+          email: {
+            equals: identifier,
+            mode: 'insensitive'
+          }
+        }
+      ]
+    }
+  });
+
+  return user ? mapToStoredUser(user) : null;
 }
 
 export function isAccountLocked(user: StoredUser) {
@@ -134,49 +162,62 @@ export function isAccountLocked(user: StoredUser) {
 }
 
 export async function clearLoginFailures(userId: string) {
-  const users = await readUsers();
-  const index = users.findIndex((user) => user.userId.toLowerCase() === userId.toLowerCase());
-
-  if (index < 0) {
+  const existing = await findUserByUserId(userId);
+  if (!existing) {
     return;
   }
 
-  users[index] = {
-    ...users[index],
-    failedLoginAttempts: 0,
-    lockUntil: null
-  };
-
-  await writeUsers(users);
+  await prisma.user.update({
+    where: { id: existing.id },
+    data: {
+      failedLoginAttempts: 0,
+      lockUntil: null
+    }
+  });
 }
 
 export async function registerLoginFailure(userId: string) {
-  const users = await readUsers();
-  const index = users.findIndex((user) => user.userId.toLowerCase() === userId.toLowerCase());
-
-  if (index < 0) {
+  const existing = await findUserByUserId(userId);
+  if (!existing) {
     return null;
   }
 
-  const attempts = users[index].failedLoginAttempts + 1;
+  const attempts = existing.failedLoginAttempts + 1;
   const shouldLock = attempts >= 5;
 
-  users[index] = {
-    ...users[index],
-    failedLoginAttempts: shouldLock ? 0 : attempts,
-    lockUntil: shouldLock ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : users[index].lockUntil
-  };
+  const updated = await prisma.user.update({
+    where: { id: existing.id },
+    data: {
+      failedLoginAttempts: shouldLock ? 0 : attempts,
+      lockUntil: shouldLock ? new Date(Date.now() + 30 * 60 * 1000) : existing.lockUntil ? new Date(existing.lockUntil) : null
+    }
+  });
 
-  await writeUsers(users);
-  return users[index];
+  return mapToStoredUser(updated);
 }
 
 export async function isEmailTaken(email: string) {
-  const users = await readUsers();
-  return users.some((user) => user.email.toLowerCase() === email.toLowerCase());
+  const count = await prisma.user.count({
+    where: {
+      email: {
+        equals: email,
+        mode: 'insensitive'
+      }
+    }
+  });
+
+  return count > 0;
 }
 
 export async function isUserIdTaken(userId: string) {
-  const users = await readUsers();
-  return users.some((user) => user.userId.toLowerCase() === userId.toLowerCase());
+  const count = await prisma.user.count({
+    where: {
+      userId: {
+        equals: userId,
+        mode: 'insensitive'
+      }
+    }
+  });
+
+  return count > 0;
 }

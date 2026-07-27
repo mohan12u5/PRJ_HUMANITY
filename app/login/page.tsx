@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { normalizeFieldValue } from '@/app/lib/auth-validation';
 import { AuthFooter } from '@/app/components/auth-footer';
+import { apiFetch } from '@/app/lib/api-client';
 
 const loginHeroSlides = [
   '/1000170135.png'
@@ -22,6 +23,27 @@ type LoginFormErrors = {
 };
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function mergeGuestCartIntoAccount() {
+  const savedCart = window.localStorage.getItem('humanity-cart');
+  if (!savedCart) {
+    return;
+  }
+
+  try {
+    const guestItems: Array<{ slug: string; quantity: number }> = JSON.parse(savedCart);
+    for (const item of guestItems) {
+      await apiFetch('/api/cart', {
+        method: 'POST',
+        body: JSON.stringify({ slug: item.slug, quantity: item.quantity })
+      });
+    }
+  } catch {
+    // Ignore malformed guest cart data; nothing to merge.
+  } finally {
+    window.localStorage.removeItem('humanity-cart');
+  }
+}
 
 function validateLogin(values: LoginFormValues): LoginFormErrors {
   const errors: LoginFormErrors = {};
@@ -133,11 +155,8 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('/api/login', {
+      const response = await apiFetch('/api/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({ loginId, password, rememberMe: submissionValues.rememberMe })
       });
 
@@ -157,6 +176,9 @@ export default function LoginPage() {
 
       window.localStorage.setItem('humanity-user', JSON.stringify(result.user));
       window.localStorage.setItem('humanity-session', JSON.stringify(result.session));
+
+      await mergeGuestCartIntoAccount();
+
       router.push('/next');
     } catch {
       setMessage('We could not authenticate right now. Please try again.');

@@ -2,12 +2,15 @@ import { NextResponse } from 'next/server';
 
 import { createSessionToken, getCookieSecurityOptions, SESSION_COOKIE_NAME, SESSION_WARNING_SECONDS } from '@/app/lib/auth-session';
 import { clearLoginFailures, findUserByLoginIdentifier, isAccountLocked, registerLoginFailure, verifyPassword } from '@/app/lib/auth-storage';
+import { logger } from '@/app/lib/logger';
+import { applyRateLimit, getClientIpAddress } from '@/app/lib/rate-limit';
 import { normalizeFieldValue } from '@/app/lib/auth-validation';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: Request) {
   try {
+    const ipAddress = getClientIpAddress(request);
     const body = await request.json();
     const loginIdInput =
       typeof body.loginId === 'string'
@@ -18,6 +21,22 @@ export async function POST(request: Request) {
     const loginId = normalizeFieldValue('userId', loginIdInput, true);
     const password = normalizeFieldValue('password', typeof body.password === 'string' ? body.password : '', true);
     const rememberMe = Boolean(body.rememberMe);
+
+    const rateLimit = await applyRateLimit(`login:${ipAddress}:${loginId || 'unknown'}`, 8, 5 * 60 * 1000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Too many login attempts. Please try again later.'
+        },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': `${rateLimit.retryAfterSeconds}`
+          }
+        }
+      );
+    }
 
     if (!loginId || !password) {
       return NextResponse.json(
@@ -88,7 +107,7 @@ export async function POST(request: Request) {
     }
 
     await clearLoginFailures(matchedUser.userId);
-    const session = createSessionToken(matchedUser.userId, matchedUser.name);
+    const session = await createSessionToken(matchedUser.userId, matchedUser.name, rememberMe);
 
     const response = NextResponse.json({
       success: true,
@@ -110,7 +129,8 @@ export async function POST(request: Request) {
     });
 
     return response;
-  } catch {
+  } catch (error) {
+    logger.error('login.failed', error);
     return NextResponse.json(
       { success: false, message: 'We could not authenticate right now. Please try again.' },
       { status: 500 }

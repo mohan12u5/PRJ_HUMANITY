@@ -13,6 +13,7 @@ import {
   type RegistrationFormValues,
   validateRegistrationValues
 } from '@/app/lib/auth-validation';
+import { apiFetch } from '@/app/lib/api-client';
 import { AuthFooter } from '@/app/components/auth-footer';
 
 const registerHeroSlides = [
@@ -154,11 +155,8 @@ export default function RegisterPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('/api/register', {
+      const response = await apiFetch('/api/register', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(submissionValues)
       });
 

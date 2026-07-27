@@ -1,6 +1,8 @@
 import 'server-only';
 
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
+import { prisma } from '@/app/lib/db';
+import { findUserByUserId } from '@/app/lib/auth-storage';
 
 type SessionTokenPayload = {
   sub: string;
@@ -9,7 +11,12 @@ type SessionTokenPayload = {
   exp: number;
 };
 
+type VerifiedSessionPayload = SessionTokenPayload & {
+  rememberMe: boolean;
+};
+
 const SESSION_DURATION_SECONDS = 30 * 60;
+const REMEMBER_ME_DURATION_SECONDS = 30 * 24 * 60 * 60;
 export const SESSION_WARNING_SECONDS = 2 * 60;
 export const SESSION_COOKIE_NAME = 'humanity_session';
 
@@ -18,7 +25,8 @@ function getSessionSecret() {
 }
 
 function encodeBase64Url(value: string | Buffer) {
-  return Buffer.from(value)
+  const buffer = typeof value === 'string' ? Buffer.from(value, 'utf8') : value;
+  return buffer
     .toString('base64')
     .replace(/=/g, '')
     .replace(/\+/g, '-')
@@ -35,27 +43,47 @@ function sign(data: string) {
   return encodeBase64Url(createHmac('sha256', getSessionSecret()).update(data).digest());
 }
 
-export function createSessionToken(userId: string, name: string) {
+function hashSessionToken(token: string) {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+export async function createSessionToken(userId: string, name: string, rememberMe = false) {
+  const user = await findUserByUserId(userId);
+  if (!user) {
+    throw new Error('Cannot create session for unknown user.');
+  }
+
+  const durationSeconds = rememberMe ? REMEMBER_ME_DURATION_SECONDS : SESSION_DURATION_SECONDS;
   const now = Math.floor(Date.now() / 1000);
   const payload: SessionTokenPayload = {
     sub: userId,
     name,
     iat: now,
-    exp: now + SESSION_DURATION_SECONDS
+    exp: now + durationSeconds
   };
 
   const header = encodeBase64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = encodeBase64Url(JSON.stringify(payload));
   const signature = sign(`${header}.${body}`);
+  const token = `${header}.${body}.${signature}`;
+
+  await prisma.session.create({
+    data: {
+      tokenHash: hashSessionToken(token),
+      userId: user.id,
+      expiresAt: new Date(payload.exp * 1000),
+      rememberMe
+    }
+  });
 
   return {
-    token: `${header}.${body}.${signature}`,
+    token,
     expiresAt: new Date(payload.exp * 1000).toISOString(),
-    maxAge: SESSION_DURATION_SECONDS
+    maxAge: durationSeconds
   };
 }
 
-export function verifySessionToken(token: string) {
+export async function verifySessionToken(token: string): Promise<VerifiedSessionPayload | null> {
   const parts = token.split('.');
   if (parts.length !== 3) {
     return null;
@@ -66,7 +94,10 @@ export function verifySessionToken(token: string) {
   const givenSignature = Buffer.from(signature);
   const expectedBuffer = Buffer.from(expectedSignature);
 
-  if (givenSignature.length !== expectedBuffer.length || !timingSafeEqual(givenSignature, expectedBuffer)) {
+  if (
+    givenSignature.length !== expectedBuffer.length ||
+    !timingSafeEqual(new Uint8Array(givenSignature), new Uint8Array(expectedBuffer))
+  ) {
     return null;
   }
 
@@ -78,10 +109,46 @@ export function verifySessionToken(token: string) {
       return null;
     }
 
-    return payload;
+    const session = await prisma.session.findUnique({
+      where: {
+        tokenHash: hashSessionToken(token)
+      }
+    });
+
+    if (!session || session.expiresAt.getTime() <= Date.now()) {
+      return null;
+    }
+
+    return {
+      ...payload,
+      rememberMe: session.rememberMe
+    };
   } catch {
     return null;
   }
+}
+
+export async function revokeSessionToken(token: string) {
+  const tokenHash = hashSessionToken(token);
+  await prisma.session.deleteMany({
+    where: { tokenHash }
+  });
+}
+
+export async function revokeAllSessionsForUser(userId: string) {
+  await prisma.session.deleteMany({
+    where: { userId }
+  });
+}
+
+export async function pruneExpiredSessions() {
+  await prisma.session.deleteMany({
+    where: {
+      expiresAt: {
+        lt: new Date()
+      }
+    }
+  });
 }
 
 export function getCookieSecurityOptions() {

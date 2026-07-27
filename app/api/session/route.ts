@@ -1,6 +1,33 @@
 import { NextResponse } from 'next/server';
 
-import { createSessionToken, getCookieSecurityOptions, SESSION_COOKIE_NAME, SESSION_WARNING_SECONDS, verifySessionToken } from '@/app/lib/auth-session';
+import {
+  createSessionToken,
+  getCookieSecurityOptions,
+  pruneExpiredSessions,
+  revokeSessionToken,
+  SESSION_COOKIE_NAME,
+  SESSION_WARNING_SECONDS,
+  verifySessionToken
+} from '@/app/lib/auth-session';
+
+function getSessionCookieValue(request: Request) {
+  const cookieHeader = request.headers.get('cookie');
+  const rawToken = cookieHeader
+    ?.split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${SESSION_COOKIE_NAME}=`))
+    ?.split('=')[1];
+
+  if (!rawToken) {
+    return undefined;
+  }
+
+  try {
+    return decodeURIComponent(rawToken);
+  } catch {
+    return rawToken;
+  }
+}
 
 function unauthorized() {
   const response = NextResponse.json({ success: false, message: 'Session is not valid.' }, { status: 401 });
@@ -12,21 +39,18 @@ function unauthorized() {
 }
 
 export async function GET(request: Request) {
-  const cookieHeader = request.headers.get('cookie');
-  const cookieValue = cookieHeader
-    ?.split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${SESSION_COOKIE_NAME}=`))
-    ?.split('=')[1];
+  const cookieValue = getSessionCookieValue(request);
 
   if (!cookieValue) {
     return unauthorized();
   }
 
-  const payload = verifySessionToken(cookieValue);
+  const payload = await verifySessionToken(cookieValue);
   if (!payload) {
     return unauthorized();
   }
+
+  await pruneExpiredSessions();
 
   return NextResponse.json({
     success: true,
@@ -40,23 +64,19 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const cookieHeader = request.headers.get('cookie');
-  const cookieValue = cookieHeader
-    ?.split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${SESSION_COOKIE_NAME}=`))
-    ?.split('=')[1];
+  const cookieValue = getSessionCookieValue(request);
 
   if (!cookieValue) {
     return unauthorized();
   }
 
-  const payload = verifySessionToken(cookieValue);
+  const payload = await verifySessionToken(cookieValue);
   if (!payload) {
     return unauthorized();
   }
 
-  const refreshedSession = createSessionToken(payload.sub, payload.name);
+  await revokeSessionToken(cookieValue);
+  const refreshedSession = await createSessionToken(payload.sub, payload.name, payload.rememberMe);
   const response = NextResponse.json({
     success: true,
     session: {
@@ -75,7 +95,12 @@ export async function POST(request: Request) {
   return response;
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  const cookieValue = getSessionCookieValue(request);
+  if (cookieValue) {
+    await revokeSessionToken(cookieValue);
+  }
+
   const response = NextResponse.json({ success: true });
   response.cookies.set(SESSION_COOKIE_NAME, '', {
     ...getCookieSecurityOptions(),

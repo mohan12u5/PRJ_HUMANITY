@@ -1,10 +1,36 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { useCart } from '@/app/components/cart-context';
 
 export default function CartPage() {
-  const { items, subtotal, updateQuantity, removeFromCart, clearCart } = useCart();
+  const router = useRouter();
+  const { items, subtotal, isAuthenticated, isSyncing, updateQuantity, removeFromCart, clearCart, checkout } = useCart();
+  const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+
+  const handleCheckout = async () => {
+    if (!isAuthenticated) {
+      router.push('/login?next=/cart');
+      return;
+    }
+
+    setIsCheckingOut(true);
+    setCheckoutMessage(null);
+
+    const result = await checkout();
+
+    if (!result.success) {
+      setCheckoutMessage(result.message);
+      setIsCheckingOut(false);
+      return;
+    }
+
+    setIsCheckingOut(false);
+    router.push('/orders');
+  };
 
   return (
     <main className="page-shell cart-page">
@@ -42,10 +68,14 @@ export default function CartPage() {
               <div>
                 <strong>Subtotal: ${subtotal}</strong>
                 <p>Shipping and taxes calculated at checkout.</p>
+                {!isAuthenticated && <p className="form-error">Log in to save your cart and check out.</p>}
+                {checkoutMessage && <p className="form-error">{checkoutMessage}</p>}
               </div>
               <div className="hero-actions">
-                <button className="btn btn-secondary" onClick={clearCart}>Clear Cart</button>
-                <button className="btn btn-primary">Checkout</button>
+                <button className="btn btn-secondary" onClick={clearCart} disabled={isSyncing}>Clear Cart</button>
+                <button className="btn btn-primary" onClick={handleCheckout} disabled={isCheckingOut || isSyncing}>
+                  {isCheckingOut ? 'Processing…' : 'Checkout'}
+                </button>
               </div>
             </div>
           </>
@@ -54,3 +84,4 @@ export default function CartPage() {
     </main>
   );
 }
+

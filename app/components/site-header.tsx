@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { apiFetch } from '@/app/lib/api-client';
 
 type SiteHeaderProps = {
   itemCount: number;
@@ -57,7 +58,7 @@ export function SiteHeader({ itemCount }: SiteHeaderProps) {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/session', { method: 'DELETE' });
+      await apiFetch('/api/session', { method: 'DELETE' });
     } finally {
       window.localStorage.removeItem('humanity-user');
       window.localStorage.removeItem('humanity-session');
@@ -80,6 +81,7 @@ export function SiteHeader({ itemCount }: SiteHeaderProps) {
         <a href="#story">Story</a>
         <a href="#contact">Contact</a>
         <Link href="/cart">Cart ({itemCount})</Link>
+        {user && <Link href="/orders">Orders</Link>}
         {user ? (
           <div className="auth-panel">
             <span className="auth-greeting">Hi, {user.name}</span>

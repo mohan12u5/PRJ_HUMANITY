@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { apiFetch } from '@/app/lib/api-client';
 
 type SessionPayload = {
   userId: string;
@@ -68,11 +69,8 @@ export default function NextPage() {
     lastRefreshTimeRef.current = now;
 
     try {
-      const response = await fetch('/api/session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
+      const response = await apiFetch('/api/session', {
+        method: 'POST'
       });
 
       if (!response.ok) {
@@ -135,7 +133,7 @@ export default function NextPage() {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/session', { method: 'DELETE' });
+      await apiFetch('/api/session', { method: 'DELETE' });
     } finally {
       window.localStorage.removeItem('humanity-user');
       window.localStorage.removeItem('humanity-session');

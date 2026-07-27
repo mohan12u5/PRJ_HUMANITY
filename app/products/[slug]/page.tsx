@@ -2,10 +2,10 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AddToCartButton } from '@/app/components/add-to-cart-button';
 import { ProductImageGallery } from '@/app/components/product-image-gallery';
-import { getProduct } from '@/app/lib/products';
+import { getCatalogProductBySlug } from '@/app/lib/catalog';
 
-export default function ProductPage({ params }: { params: { slug: string } }) {
-  const product = getProduct(params.slug);
+export default async function ProductPage({ params }: { params: { slug: string } }) {
+  const product = await getCatalogProductBySlug(params.slug);
 
   if (!product) {
     notFound();
